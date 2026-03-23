@@ -1,0 +1,34 @@
+# Environment variables and secrets (sensitive data)
+.env
+.env.local
+secrets/
+!secrets/.gitkeep
+
+# SSL/TLS certificates and keys (sensitive)
+*.crt
+*.key
+*.pem
+
+# Database backups and data (sensitive and large)
+data/
+*.sql.bak
+*.sql.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Credentials in any format
+*credentials*
+*password*
+!sources/

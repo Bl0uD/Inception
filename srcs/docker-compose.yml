@@ -1,16 +1,17 @@
-version: '3'
+version: '3.9'
 
 services:
 
   nginx:
     # Container name created by Docker
-    container-name: nginx
+    container_name: nginx
     # Path to repository to build Docker image
     build: 
-      ./requirements/nginx
-    # Input and output of one Docker container, here listen on 443th and send on 443th port. [listen:send]
+      context: ./requirements/nginx
+    # Input and output of one Docker container, listen on ports 80 (HTTP redirect) and 443 (HTTPS)
     ports:
-      -443:443
+      - "80:80"
+      - "443:443"
     # Define persistants volumes to store data permanently outside the container.
     volumes:
       - wordpress_data:/var/www/html
@@ -18,17 +19,18 @@ services:
     restart:
       always
     # Define Docker networks which this service will connect to.
-    # -network: alias redirecting to section networks in the Docker-compose.
     networks:
-      -network
-    # Load environment varaibles from file .env, shared by every service in the Docker compose
+      - network
+    # Load environment variables from file .env, shared by every service in the Docker compose
     env_file:
       - .env
+    depends_on:
+      - wordpress
 
   mariadb:
     container_name: mariadb
     build: 
-      ./requirements/mariadbd
+      context: ./requirements/mariadb
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
@@ -37,6 +39,10 @@ services:
       always
     env_file:
       - .env
+    # Use Docker secrets for sensitive data
+    secrets:
+      - db_password
+      - db_root_password
   
   wordpress:
     container_name: wordpress
@@ -44,24 +50,20 @@ services:
     depends_on:
       - mariadb
     build:
-      context: 
-        ./requirements/wordpress
-      dockerfile: 
-        Dockerfile
+      context: ./requirements/wordpress
+      dockerfile: Dockerfile
     restart:
       always
     env_file:
       - .env
     volumes:
-      -wordpress_data:/var/www/html
+      - wordpress_data:/var/www/html
     networks:
       - network
-
-
-# driver_opts - specifies mount options:
-#   type: none - means we're providing a device path (not using a standard filesystem type).
-#   device - the actual directory path on the host machine where data will be stored.
-#   o: bind - bind-mounts the host directory into the container as a volume.
+    # Use Docker secrets for sensitive data
+    secrets:
+      - db_password
+      - credentials
 
 # Each volume (mariadb_data, wordpress_data) is bound to a host directory to preserve data.
 volumes:
@@ -76,13 +78,22 @@ volumes:
       device: /home/jdupuis/data/mysql
       # Bind-mount: links host directory directly to the container (bidirectional sync).
       o: bind
-      
+    
   wordpress_data:
     driver: local
     driver_opts:
       type: none
       device: /home/jdupuis/data/wordpress
       o: bind
+
+# Docker secrets - stored securely and passed to containers as files
+secrets:
+  db_password:
+    file: ../secrets/db_password.txt
+  db_root_password:
+    file: ../secrets/db_root_password.txt
+  credentials:
+    file: ../secrets/credentials.txt
 
 networks:
   # Enable communication between containers in the same network ( nginx, mariadb, wordpress ).
