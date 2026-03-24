@@ -8,6 +8,23 @@ if [ -f /run/secrets/db_password ]; then
     export MYSQL_PASSWORD
 fi
 
+# Load WordPress admin credentials from Docker secret if available.
+if [ -f /run/secrets/wp_credentials ]; then
+    WP_CREDENTIALS_USER=$(grep -E '^MY_USERNAME:' /run/secrets/wp_credentials | sed 's/^MY_USERNAME:[[:space:]]*//' || true)
+    WP_CREDENTIALS_PASSWORD=$(grep -E '^MY_PASSWORD:' /run/secrets/wp_credentials | sed 's/^MY_PASSWORD:[[:space:]]*//' || true)
+    WP_CREDENTIALS_EMAIL=$(grep -E '^MY_EMAIL:' /run/secrets/wp_credentials | sed 's/^MY_EMAIL:[[:space:]]*//' || true)
+fi
+
+WP_ADMIN_USER="${WP_CREDENTIALS_USER:-${WP_ADMIN_USER:-}}"
+WP_ADMIN_PASSWORD="${WP_CREDENTIALS_PASSWORD:-${WP_ADMIN_PASSWORD:-}}"
+WP_ADMIN_EMAIL="${WP_CREDENTIALS_EMAIL:-${WP_ADMIN_EMAIL:-}}"
+WP_TITLE="${WP_TITLE:-Inception Site}"
+WP_URL="https://${DOMAIN_NAME}"
+WP_USER_NAME="${WP_USER_NAME:-writer42}"
+WP_USER_EMAIL="${WP_USER_EMAIL:-writer42@42.fr}"
+WP_USER_ROLE="${WP_USER_ROLE:-author}"
+WP_USER_PASSWORD="${WP_USER_PASSWORD:-$MYSQL_PASSWORD}"
+
 echo "WordPress setup starting..."
 echo "Domain: $DOMAIN_NAME"
 echo "Database: $MYSQL_DATABASE @ $MYSQL_HOSTNAME"
@@ -15,13 +32,19 @@ echo "Database: $MYSQL_DATABASE @ $MYSQL_HOSTNAME"
 # Apply sane defaults and fail early on missing required values.
 MYSQL_HOSTNAME="${MYSQL_HOSTNAME:-mariadb}"
 
-required_vars=(MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_HOSTNAME)
+required_vars=(MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_HOSTNAME DOMAIN_NAME WP_ADMIN_USER WP_ADMIN_PASSWORD WP_ADMIN_EMAIL)
 for var_name in "${required_vars[@]}"; do
     if [ -z "${!var_name:-}" ]; then
         echo "ERROR: Missing required variable: $var_name"
         exit 1
     fi
 done
+
+# Subject rule: admin username must not contain admin/administrator.
+if echo "$WP_ADMIN_USER" | grep -Eiq 'admin|administrator'; then
+    echo "ERROR: WP admin username must not contain 'admin' or 'administrator'"
+    exit 1
+fi
 
 # Wait for MariaDB to be reachable before touching WordPress config.
 echo "Waiting for MariaDB to be ready..."
@@ -65,5 +88,26 @@ else
 	
 	echo "WordPress installation completed"
 fi
+
+# Install WordPress core once, then ensure required users exist.
+if ! wp core is-installed --allow-root --path=/var/www/html >/dev/null 2>&1; then
+    wp core install \
+        --allow-root \
+        --path=/var/www/html \
+        --url="$WP_URL" \
+        --title="$WP_TITLE" \
+        --admin_user="$WP_ADMIN_USER" \
+        --admin_password="$WP_ADMIN_PASSWORD" \
+        --admin_email="$WP_ADMIN_EMAIL"
+fi
+
+if ! wp user get "$WP_USER_NAME" --allow-root --path=/var/www/html >/dev/null 2>&1; then
+    wp user create "$WP_USER_NAME" "$WP_USER_EMAIL" \
+        --allow-root \
+        --path=/var/www/html \
+        --user_pass="$WP_USER_PASSWORD" \
+        --role="$WP_USER_ROLE"
+fi
+
 # Execute the CMD from Dockerfile (php-fpm)
 exec "$@"

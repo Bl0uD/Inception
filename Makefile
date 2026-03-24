@@ -15,10 +15,10 @@ clean: down
 fclean: clean
 	docker volume prune -f
 
-reset: down
-	sudo rm -rf $(HOME)/data
+reset: down-v
+	docker volume rm inception_mariadb_data inception_wordpress_data 2>/dev/null || true
 
-.PHONY: all down re clean fclean reset
+.PHONY: all down down-v re clean fclean reset
 
 dev: fclean
 		@echo "Adding files from current directory only..."

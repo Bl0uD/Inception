@@ -1,7 +1,8 @@
 # Environment variables and secrets (sensitive data)
 .env
 .env.local
-secrets/
+secrets/*
+!secrets/
 !secrets/.gitkeep
 
 # SSL/TLS certificates and keys (sensitive)

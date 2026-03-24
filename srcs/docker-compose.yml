@@ -3,12 +3,12 @@ services:
   nginx:
     # Container name created by Docker
     container_name: nginx
+    image: nginx
     # Path to repository to build Docker image
     build: 
       context: ./requirements/nginx
-    # Input and output of one Docker container, listen on ports 80 (HTTP redirect) and 443 (HTTPS)
+    # Input and output of one Docker container, listen on port 443 (HTTPS)
     ports:
-      - "80:80"
       - "443:443"
     # Define persistants volumes to store data permanently outside the container.
     volumes:
@@ -27,6 +27,7 @@ services:
 
   mariadb:
     container_name: mariadb
+    image: mariadb
     build: 
       context: ./requirements/mariadb
     volumes:
@@ -50,6 +51,7 @@ services:
   
   wordpress:
     container_name: wordpress
+    image: wordpress
     # Create a dependency, Wordpress will wait until MariaDB is ready.
     depends_on:
       mariadb:
@@ -68,27 +70,15 @@ services:
     # Use Docker secrets for sensitive data
     secrets:
       - db_password
+      - wp_credentials
 
-# Each volume (mariadb_data, wordpress_data) is bound to a host directory to preserve data.
+# Named volumes for persistent data.
 volumes:
   mariadb_data:
-    # Uses local storage driver on the host machine.
     driver: local
-    # Driver options.
-    driver_opts:
-      # none = we need to provide a device path for the volume.
-      type: none
-      # Set the device path.
-      device: ${HOME}/data/mysql
-      # Bind-mount: links host directory directly to the container (bidirectional sync).
-      o: bind
     
   wordpress_data:
     driver: local
-    driver_opts:
-      type: none
-      device: ${HOME}/data/wordpress
-      o: bind
 
 # Docker secrets - stored securely and passed to containers as files
 secrets:
@@ -96,6 +86,8 @@ secrets:
     file: ../secrets/db_password.txt
   db_root_password:
     file: ../secrets/db_root_password.txt
+  wp_credentials:
+    file: ../secrets/credentials.txt
 
 networks:
   # Enable communication between containers in the same network ( nginx, mariadb, wordpress ).
