@@ -68,7 +68,6 @@ services:
     # Use Docker secrets for sensitive data
     secrets:
       - db_password
-      - credentials
 
 # Each volume (mariadb_data, wordpress_data) is bound to a host directory to preserve data.
 volumes:
@@ -97,8 +96,6 @@ secrets:
     file: ../secrets/db_password.txt
   db_root_password:
     file: ../secrets/db_root_password.txt
-  credentials:
-    file: ../secrets/credentials.txt
 
 networks:
   # Enable communication between containers in the same network ( nginx, mariadb, wordpress ).

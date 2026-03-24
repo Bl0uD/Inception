@@ -4,6 +4,9 @@ all:
 down:
 	docker compose -f srcs/docker-compose.yml down
 
+down-v:
+	docker compose -f srcs/docker-compose.yml down -v
+
 re: down all
 
 clean: down
@@ -12,7 +15,10 @@ clean: down
 fclean: clean
 	docker volume prune -f
 
-.PHONY: all down re clean fclean
+reset: down
+	sudo rm -rf $(HOME)/data
+
+.PHONY: all down re clean fclean reset
 
 dev: fclean
 		@echo "Adding files from current directory only..."

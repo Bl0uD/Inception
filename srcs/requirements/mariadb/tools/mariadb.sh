@@ -57,8 +57,6 @@ else
         FLUSH PRIVILEGES;
 EOSQL
 
-    mysql --socket="$SOCKET_PATH" -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" < /usr/local/bin/wordpress.sql
-
     touch "$INIT_MARKER"
 
     mysqladmin --socket="$SOCKET_PATH" -uroot -p"$MYSQL_ROOT_PASSWORD" shutdown
