@@ -1,8 +1,11 @@
 #!/bin/bash
 
+set -e
+
 # Load database password from Docker secrets or environment variable
 if [ -f /run/secrets/db_password ]; then
     MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+    export MYSQL_PASSWORD
 fi
 
 # Load WordPress admin credentials from Docker secrets
@@ -22,6 +25,36 @@ fi
 echo "WordPress setup starting..."
 echo "Domain: $DOMAIN_NAME"
 echo "Database: $MYSQL_DATABASE @ $MYSQL_HOSTNAME"
+
+# Apply sane defaults and fail early on missing required values.
+MYSQL_HOSTNAME="${MYSQL_HOSTNAME:-mariadb}"
+
+required_vars=(MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_HOSTNAME)
+for var_name in "${required_vars[@]}"; do
+    if [ -z "${!var_name:-}" ]; then
+        echo "ERROR: Missing required variable: $var_name"
+        exit 1
+    fi
+done
+
+# Wait for MariaDB to be reachable before touching WordPress config.
+echo "Waiting for MariaDB to be ready..."
+for i in $(seq 1 60); do
+    if php -r '
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $db = @new mysqli(getenv("MYSQL_HOSTNAME"), getenv("MYSQL_USER"), getenv("MYSQL_PASSWORD"), getenv("MYSQL_DATABASE"));
+        if (!$db->connect_errno) { exit(0); }
+        exit(1);
+    '; then
+        echo "MariaDB connection established"
+        break
+    fi
+    if [ "$i" -eq 60 ]; then
+        echo "ERROR: MariaDB is not reachable after 60 attempts"
+        exit 1
+    fi
+    sleep 2
+done
 
 # Check if WordPress is already installed
 if [ -f ./wp-config.php ]

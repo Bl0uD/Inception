@@ -1,7 +1,14 @@
 #!/bin/sh
 
-# Initialize MariaDB system database
-mysql_install_db
+set -e
+
+SOCKET_PATH="/tmp/mysql.sock"
+INIT_MARKER="/var/lib/mysql/.inception_db_initialized"
+
+# Initialize MariaDB system database only if it does not exist yet.
+if [ ! -d "/var/lib/mysql/mysql" ]; then
+    mysql_install_db --user=mysql --datadir=/var/lib/mysql
+fi
 
 # Load passwords from Docker secrets or environment variables
 # Docker secrets are mounted at /run/secrets/
@@ -17,46 +24,46 @@ fi
 export MYSQL_ROOT_PASSWORD
 export MYSQL_PASSWORD
 
-# Start MySQL/MariaDB service
-/etc/init.d/mysql start
-
-if [ -d "/var/lib/mysql/$MYSQL_DATABASE" ] # Check if database directory already exists
-then
-	echo "Database already exists"
-else
-# Run interactive MySQL security setup with inline input (using environment variables for passwords)
-#	Y						:	Accept default
-#	$MYSQL_ROOT_PASSWORD	:	Set root password
-#	$MYSQL_ROOT_PASSWORD	:	Confirm root password
-#	Y						:	Remove anonymous users
-#	N						:	Keep remote root login disabled (optional)
-#	Y						:	Remove test databases
-#	Y						:	Reload privilege tables
-#	_EOF_					:	End of heredoc input
-mysql_secure_installation << _EOF_
-
-Y
-$MYSQL_ROOT_PASSWORD
-$MYSQL_ROOT_PASSWORD
-Y
-N
-Y
-Y
-_EOF_
-
-# Allow root to connect from any host, set its password, grant all privileges, then reload permission cache
-echo "GRANT ALL ON *.* TO 'root'@'%' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD'; FLUSH PRIVILEGES;" | mysql -uroot
-
-# Create WordPress database and user with permissions
-echo "CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE; GRANT ALL ON $MYSQL_DATABASE.* TO '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD'; FLUSH PRIVILEGES;" | mysql -u root
-
-# Import WordPress database structure and data
-mysql -uroot -p$MYSQL_ROOT_PASSWORD $MYSQL_DATABASE < /usr/local/bin/wordpress.sql
-
+# Validate required environment values before initialization.
+if [ -z "${MYSQL_DATABASE:-}" ] || [ -z "${MYSQL_USER:-}" ] || [ -z "${MYSQL_PASSWORD:-}" ] || [ -z "${MYSQL_ROOT_PASSWORD:-}" ]; then
+    echo "ERROR: Missing required MariaDB environment or secret values"
+    exit 1
 fi
 
-# Stop MySQL service (container will restart it)
-/etc/init.d/mysql stop
+# First-time database setup
+if [ -f "$INIT_MARKER" ]; then
+    echo "Database already exists"
+else
+    echo "Starting temporary MariaDB server for initialization..."
+    mysqld --user=mysql --skip-networking --socket="$SOCKET_PATH" &
+    TEMP_PID=$!
+
+    for i in $(seq 1 60); do
+        if mysqladmin --socket="$SOCKET_PATH" ping >/dev/null 2>&1; then
+            break
+        fi
+        if [ "$i" -eq 60 ]; then
+            echo "ERROR: Temporary MariaDB server did not start"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    mysql --socket="$SOCKET_PATH" -uroot <<-EOSQL
+        ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+        CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
+        CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
+        GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
+        FLUSH PRIVILEGES;
+EOSQL
+
+    mysql --socket="$SOCKET_PATH" -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" < /usr/local/bin/wordpress.sql
+
+    touch "$INIT_MARKER"
+
+    mysqladmin --socket="$SOCKET_PATH" -uroot -p"$MYSQL_ROOT_PASSWORD" shutdown
+    wait "$TEMP_PID"
+fi
 
 # Execute passed command (replace shell process with CMD from Dockerfile)
 exec "$@"
