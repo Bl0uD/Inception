@@ -89,6 +89,15 @@ else
 	echo "WordPress installation completed"
 fi
 
+# Force local filesystem operations (no FTP prompt) and ensure php-fpm can write.
+if ! grep -q "FS_METHOD" /var/www/html/wp-config.php; then
+    sed -i "/\/\* That's all, stop editing! Happy publishing\. \*\//i define( 'FS_METHOD', 'direct' );" /var/www/html/wp-config.php
+fi
+
+chown -R www-data:www-data /var/www/html
+find /var/www/html -type d -exec chmod 755 {} \;
+find /var/www/html -type f -exec chmod 644 {} \;
+
 # Install WordPress core once, then ensure required users exist.
 if ! wp core is-installed --allow-root --path=/var/www/html >/dev/null 2>&1; then
     wp core install \
